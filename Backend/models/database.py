@@ -1,4 +1,6 @@
 import logging
+import sys
+import subprocess
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -25,12 +27,30 @@ def _migrate_schema(target_engine):
         except Exception:
             pass
 
-    # Ensure existing legacy users are marked verified by default so developer accounts are not locked out
     try:
         with target_engine.begin() as conn:
             conn.execute(text("UPDATE users SET is_verified = TRUE WHERE is_verified IS NULL;"))
     except Exception:
         pass
+
+
+def _diagnose_psycopg2():
+    """One-time diagnostic to figure out why psycopg2 import might be failing."""
+    logger.warning(f"[DIAG] Python executable: {sys.executable}")
+    logger.warning(f"[DIAG] Python version: {sys.version}")
+    try:
+        import psycopg2
+        logger.warning(f"[DIAG] psycopg2 import SUCCEEDED, version: {psycopg2.__version__}")
+    except Exception as e:
+        logger.warning(f"[DIAG] psycopg2 import FAILED: {type(e).__name__}: {e}")
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "show", "psycopg2-binary"],
+                capture_output=True, text=True, timeout=10
+            )
+            logger.warning(f"[DIAG] pip show psycopg2-binary:\n{result.stdout or result.stderr}")
+        except Exception as e2:
+            logger.warning(f"[DIAG] pip show failed: {e2}")
 
 
 def get_engine():
@@ -42,21 +62,27 @@ def get_engine():
     if raw_url.startswith("postgres://"):
         raw_url = raw_url.replace("postgres://", "postgresql://", 1)
 
+    # Force explicit psycopg2 dialect so there's no ambiguity about which driver SQLAlchemy picks
+    if raw_url.startswith("postgresql://") and "+psycopg2" not in raw_url:
+        raw_url = raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
     db_url = raw_url
 
     try:
         if db_url.startswith("sqlite"):
             engine = create_engine(db_url, connect_args={"check_same_thread": False})
         else:
-            # Cloud PostgreSQL configuration (Neon / Supabase)
-            connect_args = {"connect_timeout": 3}
+            # Run diagnostics BEFORE attempting connection, so we get info even if it fails
+            _diagnose_psycopg2()
+
+            connect_args = {"connect_timeout": 5}
             if "sslmode" not in db_url:
                 connect_args["sslmode"] = "require"
 
             engine = create_engine(
                 db_url,
-                pool_pre_ping=True,       # Health-check connections before using them
-                pool_recycle=300,          # Recycle connections every 5 min to prevent serverless drops
+                pool_pre_ping=True,
+                pool_recycle=300,
                 connect_args=connect_args
             )
 
@@ -69,7 +95,7 @@ def get_engine():
         return engine
 
     except Exception as e:
-        logger.warning(f"Could not connect to database ({db_url}): {e}. Falling back to SQLite database.")
+        logger.warning(f"Could not connect to database: {type(e).__name__}: {e}. Falling back to SQLite database.")
         sqlite_url = "sqlite:///./cipher.db"
         sqlite_engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
         _migrate_schema(sqlite_engine)
