@@ -17,3 +17,5 @@ Pillow
 slowapi
 groq
 tavily-python
+resend
+sib-api-v3-sdk

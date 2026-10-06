@@ -28,7 +28,25 @@ class Settings:
     HUGGINGFACE_TOKEN: str = HF_TOKEN
     HF_IMAGE_MODEL: str = os.getenv("HF_IMAGE_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")
 
-    # Email & SMTP configuration
+    # Brevo Email API configuration (HTTP-based delivery)
+    @property
+    def BREVO_API_KEY(self) -> str:
+        return os.getenv("BREVO_API_KEY", "").strip().strip('"').strip("'")
+
+    @property
+    def BREVO_FROM_EMAIL(self) -> str:
+        return os.getenv("BREVO_FROM_EMAIL", "").strip().strip('"').strip("'")
+
+    # Resend Email API configuration (HTTP-based delivery, retained for rollback)
+    @property
+    def RESEND_API_KEY(self) -> str:
+        return os.getenv("RESEND_API_KEY", "").strip().strip('"').strip("'")
+
+    @property
+    def RESEND_FROM_EMAIL(self) -> str:
+        return os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev").strip().strip('"').strip("'")
+
+    # Email & SMTP configuration (retained for rollback compatibility)
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER: str = os.getenv("SMTP_USER", "")

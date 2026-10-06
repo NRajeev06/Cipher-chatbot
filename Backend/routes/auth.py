@@ -108,7 +108,7 @@ def signup(request: Request, req: SignupRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
 
-    # Send verification email via SMTP (or console fallback)
+    # Send verification email via Brevo (or console fallback)
     send_verification_email(new_user.email, new_user.username, code, token)
 
     return {

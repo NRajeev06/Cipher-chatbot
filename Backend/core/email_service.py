@@ -1,20 +1,25 @@
-import smtplib
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 from core.config import settings
 
 logger = logging.getLogger("cipher.email")
 
 def send_verification_email(to_email: str, username: str, code: str, token: str) -> bool:
     """
-    Sends an email verification code and direct verification link to the user.
-    Falls back gracefully to logging to console if SMTP credentials are not configured.
+    Sends an email verification code and direct verification link to the user using Brevo HTTP API.
+    Falls back gracefully to logging to console if BREVO_API_KEY is not configured or placeholder.
     """
     verify_link = f"{settings.FRONTEND_URL}/verify?token={token}&email={to_email}"
 
-    # Check if SMTP is configured
-    smtp_configured = bool(settings.SMTP_USER and settings.SMTP_PASSWORD)
+    # Check if Brevo is configured with a real API key
+    brevo_api_key = settings.BREVO_API_KEY
+    is_placeholder = (
+        not brevo_api_key
+        or brevo_api_key.startswith("your_")
+        or "placeholder" in brevo_api_key.lower()
+    )
+    brevo_configured = bool(brevo_api_key and not is_placeholder)
 
     # Print prominent developer notice in logs/console
     dev_notice = f"""
@@ -23,21 +28,26 @@ def send_verification_email(to_email: str, username: str, code: str, token: str)
 Recipient: {to_email} ({username})
 6-Digit Verification Code: {code}
 Direct Verification Link:  {verify_link}
-Status: {'Attempting SMTP Delivery...' if smtp_configured else 'DEV MODE (No SMTP credentials configured)'}
+Status: {'Attempting Brevo API Delivery...' if brevo_configured else 'DEV MODE (No BREVO_API_KEY configured)'}
 ======================================================================
 """
     print(dev_notice)
     logger.info(f"Verification code generated for {to_email}: {code}")
 
-    if not smtp_configured:
-        logger.info("SMTP_USER/SMTP_PASSWORD not set in .env. Falling back to console delivery.")
+    if not brevo_configured:
+        logger.info("BREVO_API_KEY not set in .env. Falling back to console delivery.")
         return True
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Verify your CIPHER account - Code: {code}"
-        msg["From"] = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
-        msg["To"] = to_email
+        configuration = sib_api_v3_sdk.Configuration()
+        configuration.api_key['api-key'] = brevo_api_key
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(sib_api_v3_sdk.ApiClient(configuration))
+
+        from_email_raw = settings.BREVO_FROM_EMAIL or "noreply@cipher.ai"
+        if "<" in from_email_raw and ">" in from_email_raw:
+            sender_email = from_email_raw[from_email_raw.find("<") + 1 : from_email_raw.find(">")].strip()
+        else:
+            sender_email = from_email_raw.strip()
 
         # Plain text alternative
         plain_text = f"""Hello {username},
@@ -169,18 +179,22 @@ This code will expire in 24 hours. If you did not create a CIPHER account, you c
 </body>
 </html>
 """
-        msg.attach(MIMEText(plain_text, "plain"))
-        msg.attach(MIMEText(html_content, "html"))
 
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=12) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(msg)
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            to=[{"email": to_email, "name": username}],
+            sender={"email": sender_email, "name": "CIPHER"},
+            subject=f"Verify your CIPHER account - Code: {code}",
+            html_content=html_content,
+            text_content=plain_text
+        )
 
-        logger.info(f"Verification email successfully sent to {to_email}")
+        response = api_instance.send_transac_email(send_smtp_email)
+        logger.info(f"Verification email successfully sent to {to_email} via Brevo. Response: {response}")
         return True
 
+    except ApiException as e:
+        logger.error(f"Failed to send email via Brevo to {to_email} (ApiException {e.status}): {e}")
+        return False
     except Exception as e:
-        logger.error(f"Failed to send email via SMTP to {to_email}: {e}")
-        # Return True anyway so signup doesn't crash if SMTP provider has temporary glitch
+        logger.error(f"Unexpected error while sending email via Brevo to {to_email}: {e}")
         return False
