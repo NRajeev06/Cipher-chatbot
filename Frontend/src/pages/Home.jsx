@@ -16,7 +16,7 @@ import {
   HelpCircle,
   ExternalLink
 } from 'lucide-react'
-import api from '../api/client'
+import api, { API_BASE_URL } from '../api/client'
 import Sidebar from '../components/Sidebar'
 
 // Custom code block component with copy button
@@ -268,7 +268,7 @@ export default function Home() {
 
     const token = localStorage.getItem('cipher_token')
     try {
-      const response = await fetch('/api/chat/stream', {
+      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 

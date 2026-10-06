@@ -1,7 +1,30 @@
 import axios from 'axios'
 
+/**
+ * Dynamic API base URL resolution:
+ * - Local development: defaults to '/api' to use Vite dev proxy (vite.config.js -> http://localhost:8000)
+ * - Production: uses VITE_API_URL (e.g., https://your-backend.onrender.com or https://your-backend.onrender.com/api)
+ */
+export const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL
+  if (!envUrl || envUrl.trim() === '' || envUrl.trim() === '/api') {
+    return '/api'
+  }
+  const cleanUrl = envUrl.trim().replace(/\/+$/, '')
+  return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`
+}
+
+export const API_BASE_URL = getApiBaseUrl()
+
+// Debug log to verify environment variable resolution in browser console
+console.log('[CIPHER API CONFIG]', {
+  raw_vite_env: import.meta.env.VITE_API_URL,
+  computed_base_url: API_BASE_URL,
+  mode: import.meta.env.MODE
+})
+
 const api = axios.create({ 
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   }

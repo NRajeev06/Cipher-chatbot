@@ -43,13 +43,17 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
-# CORS configuration allowing React frontend (localhost:5173)
+# CORS configuration allowing React frontend (local dev and Vercel production)
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "https://cipher-chatbot.vercel.app",
     "*"
 ]
+frontend_url = getattr(settings, "FRONTEND_URL", "").strip().rstrip("/")
+if frontend_url and frontend_url not in origins:
+    origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
